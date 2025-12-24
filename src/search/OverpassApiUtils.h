@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ProtoTypes.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -19,6 +21,10 @@ using OsmIds = std::vector<OsmId>;  // Type alias for a list of OSM IDs.
 // @param json: The JSON response from the Overpass API.
 // @return: A list of OSM IDs for the relations found.
 OsmIds ExtractRelationIds(const std::string& json);
+
+void AddFeaturesFromOverpass(const std::string& json, GeoProtoPlace& city);
+
+void LoadFeaturesByRelationIds(WebClient& client, const overpass::OsmId& relationId, GeoProtoPlace& city);
 
 // Finds relation IDs by name using the Overpass API.
 // @param client: WebClient instance to interact with the Overpass API.
