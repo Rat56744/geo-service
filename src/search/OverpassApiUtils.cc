@@ -4,6 +4,7 @@
 #include "../utils/WebClient.h"
 #include "ProtoTypes.h"
 
+#include <absl/log/log.h>
 #include <rapidjson/document.h>
 
 #include <format>
@@ -22,8 +23,11 @@ constexpr const char* sz_requestByNameFormat =  //
 constexpr const char* sz_requestCityDetailsFormatj =
    "[out:json];"
    "relation({0});"
-   "map_to_area;"
-   "(node[\"tourism\"=\"museum\"](area); node[\"tourism\"=\"hotel\"](area););"
+   "map_to_area->.a;"
+   "("
+   "  node[\"tourism\"=\"museum\"](area.a);"
+   "  node[\"tourism\"=\"hotel\"](area.a);"
+   ");"
    "out center tags;";
 
 // Overpass API query format to find relations by coordinates.
@@ -72,37 +76,90 @@ void AddFeaturesFromOverpass(const std::string& json, GeoProtoPlace& city)
    if (!document.IsObject() || !document.HasMember("elements"))
       return;
 
+   auto isAccommodationTourism = [](std::string_view v)
+   {
+      return v == "hotel" || v == "guest_house" || v == "hostel" || v == "apartment" || v == "motel" || v == "chalet" ||
+             v == "alpine_hut";
+   };
+
+   auto isAccommodationAmenity = [](std::string_view v)
+   {
+      return v == "hotel" || v == "guest_house" || v == "hostel" || v == "apartment" || v == "bed_and_breakfast";
+   };
+
    for (const auto& e : document["elements"].GetArray())
    {
-      if (!json::Has(e, "type") || json::GetString(json::Get(e, "type")) != "node")
+      if (!json::Has(e, "type"))
+         continue;
+      std::string_view type = json::GetString(json::Get(e, "type"));
+      if (type != "node" && type != "way" && type != "relation")
          continue;
 
+      // Координаты
+      double lat = 0.0;
+      double lon = 0.0;
+      if (type == "node")
+      {
+         if (!json::Has(e, "lat") || !json::Has(e, "lon"))
+            continue;
+         lat = e["lat"].GetDouble();
+         lon = e["lon"].GetDouble();
+      }
+      else
+      {
+         if (!json::Has(e, "center"))
+            continue;
+         const auto& center = json::Get(e, "center");
+         if (!json::Has(center, "lat") || !json::Has(center, "lon"))
+            continue;
+         lat = center["lat"].GetDouble();
+         lon = center["lon"].GetDouble();
+      }
+
+      // Теги
       if (!json::Has(e, "tags"))
          continue;
       const auto& tags = json::Get(e, "tags");
 
-      if (!json::Has(tags, "tourism"))
+      std::string_view tourism = "";
+      std::string_view amenity = "";
+
+      if (json::Has(tags, "tourism"))
+         tourism = json::GetString(json::Get(tags, "tourism"));
+      if (json::Has(tags, "amenity"))
+         amenity = json::GetString(json::Get(tags, "amenity"));
+
+      // Нормализация в два типа: museum или hotel
+      std::string feature_type;
+      if (tourism == "museum")
+      {
+         feature_type = "museum";
+      }
+      else if (isAccommodationTourism(tourism) || isAccommodationAmenity(amenity))
+      {
+         feature_type = "hotel";
+      }
+      else
+      {
          continue;
-      std::string_view tourism = json::GetString(json::Get(tags, "tourism"));
-      if (tourism != "museum" && tourism != "hotel")
-         continue;
+      }
 
       auto* feature = city.add_features();
+      feature->mutable_position()->set_latitude(lat);
+      feature->mutable_position()->set_longitude(lon);
 
-      feature->mutable_position()->set_latitude(e["lat"].GetDouble());
-      feature->mutable_position()->set_longitude(e["lon"].GetDouble());
-
-      (*feature->mutable_tags())["tourism"] = std::string(tourism);
+      // Важно: DebugHelpers печатает по tourism, поэтому кладём нормализованное значение.
+      (*feature->mutable_tags())["tourism"] = feature_type;
 
       if (json::Has(tags, "name"))
-      {
          (*feature->mutable_tags())["name"] = std::string(json::GetString(json::Get(tags, "name")));
-      }
 
       if (json::Has(tags, "name:en"))
-      {
          (*feature->mutable_tags())["name:en"] = std::string(json::GetString(json::Get(tags, "name:en")));
-      }
+
+      LOG(INFO) << "AddFeaturesFromOverpass: tourism=" << feature_type
+                << ", name=" << (json::Has(tags, "name") ? json::GetString(json::Get(tags, "name")) : "")
+                << ", lat=" << lat << ", lon=" << lon;
    }
 }
 
