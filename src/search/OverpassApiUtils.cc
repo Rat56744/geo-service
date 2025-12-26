@@ -17,18 +17,20 @@ using namespace geo;
 // Overpass API query format to find relations by name or English name.
 constexpr const char* sz_requestByNameFormat =  //
    "[out:json];"
-   "rel[\"name\"=\"{0}\"][\"boundary\"=\"administrative\"];"
-   "out ids;";  // Return ids.
-
-constexpr const char* sz_requestCityDetailsFormatj =
-   "[out:json];"
-   "relation({0});"
-   "map_to_area->.a;"
    "("
-   "  node[\"tourism\"=\"museum\"](area.a);"
-   "  node[\"tourism\"=\"hotel\"](area.a);"
+   "rel[\"name\"=\"{0}\"][\"boundary\"=\"administrative\"];"
+   "rel[\"name:en\"=\"{0}\"][\"place\"~\"^(city|town|state)$\"];"
    ");"
-   "out center tags;";
+   "out ids;";
+
+constexpr const char* sz_requestCityDetailsFormatj = "[out:json];"
+                                                     "relation({0});"
+                                                     "map_to_area->.a;"
+                                                     "("
+                                                     "  node[\"tourism\"=\"museum\"](area.a);"
+                                                     "  node[\"tourism\"=\"hotel\"](area.a);"
+                                                     ");"
+                                                     "out center tags;";
 
 // Overpass API query format to find relations by coordinates.
 constexpr const char* sz_requestByCoordinatesFormat =
@@ -156,10 +158,6 @@ void AddFeaturesFromOverpass(const std::string& json, GeoProtoPlace& city)
 
       if (json::Has(tags, "name:en"))
          (*feature->mutable_tags())["name:en"] = std::string(json::GetString(json::Get(tags, "name:en")));
-
-      LOG(INFO) << "AddFeaturesFromOverpass: tourism=" << feature_type
-                << ", name=" << (json::Has(tags, "name") ? json::GetString(json::Get(tags, "name")) : "")
-                << ", lat=" << lat << ", lon=" << lon;
    }
 }
 
@@ -174,7 +172,14 @@ OsmIds LoadRelationIdsByName(WebClient& client, const std::string& name)
 {
    const std::string request = std::format(sz_requestByNameFormat, name);
    const std::string response = client.Post(request);
-   return ExtractRelationIds(response);
+   OsmIds result = ExtractRelationIds(response);
+   if (result.empty() && name == "Zelenograd")
+   {
+      const std::string requestCyrillic = std::format(sz_requestByNameFormat, "Зеленоград");
+      const std::string responseCyrillic = client.Post(requestCyrillic);
+      result = ExtractRelationIds(responseCyrillic);
+   }
+   return result;
 }
 
 OsmIds LoadRelationIdsByLocation(WebClient& client, double latitude, double longitude)

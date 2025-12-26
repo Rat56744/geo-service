@@ -47,7 +47,7 @@ constexpr const char* sz_nodeSeaBeachesDef = "way[natural=coastline]({0}) -> .co
 
 // Note - in the following query we select only nodes belonging to a bounding box,
 // because big objects (such as lakes/seas) may contain nodes from different regions and even countries.
-constexpr const char* sz_nodeSaltLakesDef = "wr[natural=water][water=lake][salt=no][name]({0}) -> .outL;"
+constexpr const char* sz_nodeSaltLakesDef = "wr[natural=water][water=lake][salt=yes][name]({0}) -> .outL;"
                                             ".outL > -> .outL;"  // Recurse down (to ways and nodes).
                                             "node.outL({0})";    // Select only nodes.
 
@@ -107,7 +107,7 @@ std::string formatRegionsRequest(const ISearchEngine::RegionPreferences& prefs, 
    const char* sz_relSaltLakes = ".relL";
 
    const std::string boundingBoxStr =
-      std::format("{}, {}, {}, {}", boundingBox[0], boundingBox[2], boundingBox[1], boundingBox[3]);
+      std::format("{}, {}, {}, {}", boundingBox[0], boundingBox[1], boundingBox[2], boundingBox[3]);
 
    std::string request = sz_requestHeader;
    if (prefs.objects & geoproto::RegionsRequest::Preferences::GEOGRAPHICAL_FEATURE_INTERNATIONAL_AIRPORTS)
@@ -136,7 +136,7 @@ std::string formatRegionsRequest(const ISearchEngine::RegionPreferences& prefs, 
    if (prefs.objects & geoproto::RegionsRequest::Preferences::GEOGRAPHICAL_FEATURE_SALT_LAKES)
    {
       const auto nodes = std::format(sz_nodeSaltLakesDef, boundingBoxStr);
-      request += std::format(sz_requestRelationsByNodes, nodes, ".nodesL", ".areasL", sz_regionsTags, sz_relSeaBeaches);
+      request += std::format(sz_requestRelationsByNodes, nodes, ".nodesL", ".areasL", sz_regionsTags, sz_relSaltLakes);
    }
 
    if (request == sz_requestHeader)
@@ -227,7 +227,7 @@ nominatim::RelationInfos SearchEngine::findRegions(
    // taking into account passed preferences.
    const std::string response = m_overpassApiClient.Post(request);
    overpass::OsmIds relationIds = overpass::ExtractRelationIds(response);
-   if (relationIds.size())
+   if (relationIds.empty())
       return {};
 
    // Remove ids which have already been processed.
@@ -244,11 +244,11 @@ nominatim::RelationInfos SearchEngine::findRegions(
          "std::set_difference() filtered out {} relation ids", relationIds.size() - relationIdsToProcess.size());
 #endif
 
-   if (!relationIdsToProcess.empty())
+   if (relationIdsToProcess.empty())
       return {};
 
    // Use Nominatim API to load some detailed information for all the found "relation" entities.
-   const auto infos = nominatim::LookupRelationInformation(relationIdsToProcess, m_overpassApiClient);
+   const auto infos = nominatim::LookupRelationInformation(relationIdsToProcess, m_nominatimApiClient);
    if (infos.empty())
    {
       LOG(ERROR) << std::format(

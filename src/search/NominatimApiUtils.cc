@@ -113,10 +113,9 @@ RelationInfos LookupRelationInformation(const OsmIds& relationIds, WebClient& no
    splitInChunksAndParseResponses(relationIds, nominatimApiClient,
       [&regions](const rapidjson::Document& document)
       {
-         RelationInfos regions;
          for (const auto& item : document.GetArray())
             regions.emplace_back(
-               jsonToObject<RelationInfo>(item, json::GetString(json::Get(item, "address_type")).data()));
+               jsonToObject<RelationInfo>(item, json::GetString(json::Get(item, "addresstype")).data()));
       });
    return regions;
 }
